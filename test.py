@@ -16,6 +16,14 @@ class TestHttp(unittest.TestCase):
     def setUp(self):
         """docstring for setUp"""
         self.client = httplib2.Http()
+        pid = os.fork()
+        if pid:
+            self.pid = pid
+        else:
+            server = Server(ip="127.0.0.1")
+            server.setDaemon(True)
+            server.start()
+        
     def testPost(self):
         """Try to post a new key/value pair"""
         data = {'key': 'testkey42', 'value': 'testvalue http post'}
@@ -35,9 +43,11 @@ class TestHttp(unittest.TestCase):
         self.assertEquals(resp.status, 404)
         
     def tearDown(self):
-        # clear data
-        data = {'key': 'magic', 'value': 'clear'}
-        self.client.request("http://127.0.0.1:%s/" % http_port, "POST", urllib.urlencode(data))
+        try:
+            os.kill(self.pid, 15)
+            os.wait4(self.pid, 0)
+        except OSError,e:
+            pass # the child might already be dead..
         
 class TestDataStore(unittest.TestCase):
     def setUp(self):
@@ -160,21 +170,7 @@ class TestCluster(unittest.TestCase):
                 os.wait4(pid, 0)
             except OSError,e:
                 pass # the child might already be dead..
-
-class ServerThread(threading.Thread):
-    """Http tests need a server running, so we start one in its
-       own thread.
-    """
-    def run(self):
-        """docstring for run"""
-        self.server = Server(ip="127.0.0.1")
-        self.server.start()
         
 if __name__ == '__main__':
-    # 
-    print "set up server"
-    server = ServerThread()
-    server.setDaemon(True)
-    server.start()
 
     unittest.main()        
