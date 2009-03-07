@@ -10,7 +10,7 @@ The master nodes are selected based in which ones have the most keys.
 
 h2. Installation
 
-Install the dependencies: [todo: httplib2, ]
+Install httplib2
 Install with setup.py
 Run the diststored script on all nodes using, for example, supervisord.
 
@@ -39,4 +39,4 @@ and the key/value pair is cached locally.
 
 h3. Get local
 
-Get a key locally, without requesting missing keys from the clusters.
+Get a key locally, without requesting missing keys from the cluster.
