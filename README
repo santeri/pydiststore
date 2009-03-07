@@ -1,0 +1,42 @@
+h1. Diststore
+
+*NOTE: this is not really suitable for real use yet.*
+
+The system is a asymmetric key/value store where all the data is persisted on two master servers.
+Commonly accessed keys are distributed on more servers than the infrequently accessed keys.
+
+The master nodes are selected based in which ones have the most keys.
+[Easier to manage with set masters?]
+
+h2. Installation
+
+Install the dependencies: [todo: httplib2, ]
+Install with setup.py
+Run the diststored script on all nodes using, for example, supervisord.
+
+h2. Node services
+
+The nodes run a http server for settings and getting keys/values and
+a thread that listens for multicast request.
+
+h3. Post request
+
+All key/value pairs are set using http POST, using a form with @key@ and @value@ fields.
+
+[todo: They are sent to the current master servers.]
+[todo: deleting keys]
+
+h3. Get request
+
+If a node receives a get request for a key which it doesn't have locally, a
+multicast request is sent to all nodes.
+
+All other node which have the key will reply to the node using a udp packet and
+the original node then gets the value using http. The value is sent to the client
+and the key/value pair is cached locally.
+
+[todo: The key/value pairs expire after a set timeout on all nodes except for the master nodes]
+
+h3. Get local
+
+Get a key locally, without requesting missing keys from the clusters.

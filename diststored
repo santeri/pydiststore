@@ -1,0 +1,23 @@
+#!/usr/bin/env python
+# encoding: utf-8
+"""
+diststored.py
+
+Created by Santeri Hernejärvi on 2009-03-04.
+Copyright (c) 2009 __MyCompanyName__. All rights reserved.
+"""
+
+import sys
+import os
+import diststore
+
+def main():
+    print "diststored starting"
+    try:
+        server = diststore.Server()
+        server.start()
+    except:
+        print "diststored terminated"
+if __name__ == '__main__':
+    main()
+
