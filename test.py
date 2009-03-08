@@ -101,7 +101,7 @@ class TestPortmanager(unittest.TestCase):
     
 
 class TestCluster(unittest.TestCase):
-    pids = []
+    pids = {}
     ip_fmt = "10.1.2.%d"
     nservers = 10
     
@@ -114,7 +114,7 @@ class TestCluster(unittest.TestCase):
         for i in range(1, self.nservers+1):
             pid = os.fork()
             if pid:
-                self.pids.append(pid)
+                self.pids[i] = pid 
             else:
                 # in child
                 start = 50000 + i * 100
@@ -124,12 +124,13 @@ class TestCluster(unittest.TestCase):
                 dhs.start()
         # wait a bit so the servers has time to start
         time.sleep(0.1)
+        print self.pids
         
         self.client = httplib2.Http()
     
     def _checked_post(self, node, key, value, status=200):
         """docstring for _checked_put"""
-        url = "http://%s:%s/%s" % (self.ip_fmt % 1, http_port(), key)
+        url = "http://%s:%s/%s" % (self.ip_fmt % node, http_port(), key)
         resp, content = self.client.request(url, "POST", value)
         self.assertEquals(resp.status, status)
     
@@ -206,9 +207,46 @@ class TestCluster(unittest.TestCase):
             value = self._checked_get(3, 'testkey-2-%d' % i, cmd='getlocal')
             self.assertEquals(value, 'testvalue %d, for server 5' % i)
     
+    def testMasterFail(self):
+        """Test that a new master is selected when one goes down
+            
+            Send keys to .1 so it and .10 will be a masters,
+            send keys to .2 so it will become master, when .1 goes down.
+            
+            Kill .1.
+            
+            Send a key to .3, and check that .2 becomes master.
+        """
+        time.sleep(1)
+        for i in range(1, 10):
+            self._checked_post(1, 'testkey%d' % i, 'testvalue %d, for server 1' % i)
+
+        for i in range(1, 10):
+            self._checked_post(i, 'testkey-2-%d' % i, 'testvalue-2 %d, for server 1' % i)
+        
+        time.sleep(1)
+        
+        self._checked_post(2, 'testkeyfor2', 'testvalue for 2')
+        time.sleep(1)
+        
+        pid = self.pids[1]
+        print "killing ", pid
+        print os.kill(pid, 15)
+        print os.wait4(pid, 0)
+        del(self.pids[1])
+        time.sleep(1)
+        
+        self._checked_post(3, 'testkeyfor3', 'testvalue for 3')
+
+        for i in range(1, 10):
+            value = self._checked_get(2, 'testkey%d' % i, cmd='getlocal')
+            self.assertEquals(value, 'testvalue %d, for server 1' % i)
+        
+        
+    
     def tearDown(self):
         """Kill the nodes"""
-        for pid in self.pids:
+        for pid in self.pids.values():
             try:
                 os.kill(pid, 15)
                 os.wait4(pid, 0)

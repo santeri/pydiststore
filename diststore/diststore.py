@@ -22,7 +22,7 @@ class RequestHandler(threading.Thread):
             A request from a node for a key.
         - keycount [ip] [port]
             A request for the number of keys we have.
-            
+        - newmasters
     """
     def __init__(self, addr, port, shared):
         """Set up a multicast listen
@@ -30,7 +30,6 @@ class RequestHandler(threading.Thread):
             iface is the interface we should use for multicast.
             addr is the multicast address to use.
         """
-        self.shared = shared
         s = udpsocket()
         s.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_TTL, 10)
         s.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_LOOP, 0)
@@ -39,12 +38,13 @@ class RequestHandler(threading.Thread):
         s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
         debug_print("Request handler at %s:%d in multicast group %s" % (addr, port, multicast_addr()))
         self.sock = s
+        self.shared = shared
         threading.Thread.__init__(self)
     
     def run(self):
         """run the handler"""
         while True:
-            msg= self.sock.recv(1024)
+            msg = self.sock.recv(1024)
             debug_print("%s: received multicast msg: %s" % (self.shared.ip, repr(msg)))
             if msg.startswith('keycount'):
                 _, ip, port = msg.split()
@@ -68,13 +68,15 @@ class HttpHandler(BaseHTTPRequestHandler):
         This class in instanced by the ThreadedHttpServer, once per connection
     """
     def request_key(self, key):
-        """helper for sending key request"""
+        """helper for sending key request to the cluster"""
         # create socket and find a free port
         rsock, port = self.server.shared.pm.next_socket()
         rsock.settimeout(multicast_timeout())
         # send a request with sender & port information
         sock = udpsocket()
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 10)
+        sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_LOOP, 1)
+        
         data = "whohas %s %s %d" % (key, self.server.shared.ip, port)
         debug_print("%s: sending multicast: %s" % (self.server.shared.ip, data))
         sock.sendto(data, multicast_dst())
@@ -102,6 +104,8 @@ class HttpHandler(BaseHTTPRequestHandler):
         # send a request with sender & port information
         sock = udpsocket()
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+        sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_LOOP, 1)
+        
         data = "keycount %s %d" % (self.server.shared.ip, port)
         debug_print("%s: sending multicast: %s" % (self.server.shared.ip, data))
         sock.sendto(data, multicast_dst())
@@ -148,18 +152,19 @@ class HttpHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.end_headers()
             self.wfile.write(value)
+            return
         else:
             if cmd == 'getlocal':
                 # Don't check the cluster.
                 self.send_error(404)
                 return
-                
+            
             resp = self.request_key(key) 
             
             if resp == None:
                 self.send_error(404)
                 return
-                
+            
             if resp.startswith('gotkey'):
                 # gotkey [hash] [ip]
                 _, remote_key, remote_ip = resp.split()
@@ -189,11 +194,8 @@ class HttpHandler(BaseHTTPRequestHandler):
         """Store a key/value pair in the datastore, and send
             it to the master servers, if any.
         """
-        # master servers are decided by who has the most keys, and
-        # are updated by periodically sending multicast status requests.
         
         # parse post data
-        
         content_length = int(self.headers.get('Content-length', '-1'))
         v = self.rfile.read(content_length)
         k = self.path.split("/")[-1] # last part
@@ -219,16 +221,23 @@ class HttpHandler(BaseHTTPRequestHandler):
             if servers != []:
                 self.server.shared.masters = servers[:2]
                 self.server.shared.nodes   = servers
-                #print "servers: ", servers
-                #print "found masters: ", self.server.shared.masters
+                print "servers: ", servers
+                print "found masters: ", self.server.shared.masters
         
-        client = httplib2.Http()
         for _, server in self.server.shared.masters:
             if server != self.server.shared.ip: # no point in sending ourself our data.
-                resp, content = client.request("http://%s:%s/local/%s" % (server, http_port(), k), "POST", v)
-                if resp.status != 200:
-                    self.send_error(resp.status)
-                    return
+                client = httplib2.Http()
+                try:
+                    url = "http://%s:%s/local/%s" % (server, http_port(), k)
+                    print "sending localpost: ", url
+                    resp, content = client.request(url, "POST", v)
+                    if resp.status != 200:
+                        self.send_error(resp.status)
+                        return
+                except socket.error,e:
+                    # notify cluster that a master is down
+                    print "TODO: select new masters: ", e
+                    self.send_error(500)
         
         self.send_response(200)
         self.end_headers()
@@ -284,8 +293,8 @@ class Server(object):
     
     def __init__(self, ip='', ds = Datastore(), pm = Portmanager(50000,1000)):
         """create the http server and start the multicast thread"""
-        shared = Server.Shared(ds, pm, ip)
-        self.http = ThreadedHttpServer((ip, http_port()), HttpHandler, shared)
+        shared = Server.Shared(ds, pm, str(ip))
+        self.http = ThreadedHttpServer((str(ip), http_port()), HttpHandler, shared)
         self.http.daemon_threads = True
         self.rh = RequestHandler(ip, multicast_port(), shared)
         self.rh.setDaemon(True)
