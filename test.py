@@ -5,7 +5,6 @@ import threading
 import time
 import httplib2
 import BaseHTTPServer
-import urllib
 import socket
 import os
 
@@ -26,14 +25,12 @@ class TestHttp(unittest.TestCase):
         
     def testPost(self):
         """Try to post a new key/value pair"""
-        data = {'key': 'testkey42', 'value': 'testvalue http post'}
-        resp, content = self.client.request("http://127.0.0.1:%s/" % http_port, "POST", urllib.urlencode(data))
+        resp, content = self.client.request("http://127.0.0.1:%s/testkey42" % http_port, "POST", 'testvalue http post')
         self.assertEquals(resp.status, 200)
         print content
     def testGet(self):
         """docstring for testGet"""
-        data = {'key': 'testkey42', 'value': 'testvalue http post'}
-        resp, content = self.client.request("http://127.0.0.1:%s/" % http_port, "POST", urllib.urlencode(data))
+        resp, content = self.client.request("http://127.0.0.1:%s/testkey42" % http_port, "POST", 'testvalue http post')
         self.assertEquals(resp.status, 200)
         resp, content = self.client.request("http://127.0.0.1:%s/get/testkey42"%http_port, "GET")
         self.assertEquals(resp.status, 200)
@@ -129,9 +126,8 @@ class TestCluster(unittest.TestCase):
                 pass
     def testPutGet(self):
         """put a key to one server, get from another"""            
-        put_url = "http://%s:%s/" % (self.ip_fmt % 1, http_port)
-        data = {'key': 'testkey47', 'value': 'testvalue, http post'}
-        resp, content = self.client.request(put_url, "POST", urllib.urlencode(data))
+        put_url = "http://%s:%s/%s" % (self.ip_fmt % 1, http_port, 'testkey47')
+        resp, content = self.client.request(put_url, "POST", 'testvalue, http post')
         print "%s, %s" % (resp,content)
         self.assertEquals(resp.status, 200)
         
@@ -144,9 +140,8 @@ class TestCluster(unittest.TestCase):
         """Put keys on all servers and check that the master selection works
         """
         for i in range(1, self.nservers+1):
-            put_url = "http://%s:%s/" % (self.ip_fmt % i, http_port)
-            data = {'key': 'testkey%d' % i, 'value': 'testvalue, for server %d' % i}
-            resp, content = self.client.request(put_url, "POST", urllib.urlencode(data))
+            put_url = "http://%s:%s/%s" % (self.ip_fmt % i, http_port, 'testkey%d' % i)
+            resp, content = self.client.request(put_url, "POST", 'testvalue, for server %d' % i)
             print "%s, %s" % (resp,content)
             self.assertEquals(resp.status, 200)
 
@@ -158,10 +153,65 @@ class TestCluster(unittest.TestCase):
             self.assertEquals(resp.status, 200)
             self.assertEquals(content, "testvalue, for server %d" % i)
     
-    def testMultipartPost(self):
-        """Check if form multipart encoding works, with big value"""
-        self.assertEquals(False, True)
-            
+    def testSync(self):
+        """Check that syncing data works"""
+        # put 10 keys to .1
+        for i in range(1, 10):
+            put_url = "http://%s:%s/%s" % (self.ip_fmt % 1, http_port, 'testkey%d' % i)
+            resp, content = self.client.request(put_url, "POST", 'testvalue %d, for server 1' %i)
+            print "%s, %s" % (resp,content)
+            self.assertEquals(resp.status, 200)
+        
+        # put 10 keys to .5
+        for i in range(1, 10):
+            put_url = "http://%s:%s/%s" % (self.ip_fmt % 5, http_port, 'testkey-2-%d' % i)
+            resp, content = self.client.request(put_url, "POST", 'testvalue %d, for server 5' % i)
+            print "%s, %s" % (resp,content)
+            self.assertEquals(resp.status, 200)
+        
+        # get all keys from .1 as they should have been sync'd.
+        for i in range(1, 10):
+            get_url = "http://%s:%s/getlocal/testkey%d" % (self.ip_fmt % 1, http_port, i)
+            resp, content = self.client.request(get_url, 'GET')
+            self.assertEquals(resp.status, 200)
+            get_url = "http://%s:%s/getlocal/testkey-2-%d" % (self.ip_fmt % 1, http_port, i)
+            resp, content = self.client.request(get_url, 'GET')
+            self.assertEquals(resp.status, 200)
+
+    def testClusterGet(self):
+        """Check that syncing data works, part 2"""
+        # put 10 keys to .1
+        for i in range(1, 10):
+            put_url = "http://%s:%s/%s" % (self.ip_fmt % 1, http_port, 'testkey%d' % i)
+            resp, content = self.client.request(put_url, "POST", 'testvalue %d, for server 1' %i)
+            print "%s, %s" % (resp,content)
+            self.assertEquals(resp.status, 200)
+
+        # put 10 keys to .5
+        for i in range(1, 10):
+            put_url = "http://%s:%s/%s" % (self.ip_fmt % 5, http_port, 'testkey-2-%d' % i)
+            resp, content = self.client.request(put_url, "POST", 'testvalue %d, for server 5' % i)
+            print "%s, %s" % (resp,content)
+            self.assertEquals(resp.status, 200)
+
+        # get all keys from .3 which will query cluster.
+        for i in range(1, 10):
+            get_url = "http://%s:%s/get/testkey%d" % (self.ip_fmt % 3, http_port, i)
+            resp, content = self.client.request(get_url, 'GET')
+            self.assertEquals(resp.status, 200)
+            get_url = "http://%s:%s/get/testkey-2-%d" % (self.ip_fmt % 3, http_port, i)
+            resp, content = self.client.request(get_url, 'GET')
+            self.assertEquals(resp.status, 200)
+        
+        # now .3 should have all the keys
+        for i in range(1, 10):
+            get_url = "http://%s:%s/getlocal/testkey%d" % (self.ip_fmt % 3, http_port, i)
+            resp, content = self.client.request(get_url, 'GET')
+            self.assertEquals(resp.status, 200)
+            get_url = "http://%s:%s/getlocal/testkey-2-%d" % (self.ip_fmt % 3, http_port, i)
+            resp, content = self.client.request(get_url, 'GET')
+            self.assertEquals(resp.status, 200)
+
     def tearDown(self):
         """Kill the nodes"""
         for pid in self.pids:

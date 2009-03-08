@@ -11,7 +11,6 @@ import threading
 import cgi
 import struct
 import httplib2
-import urllib
 import socket
 import sys
 
@@ -190,11 +189,15 @@ class HttpHandler(BaseHTTPRequestHandler):
         # are updated by periodically sending multicast status requests.
         
         # parse post data
-        env = {'REQUEST_METHOD':'POST'}
-        if 'Content-Type' in self.headers:
-            env['CONTENT_TYPE'] = self.headers['Content-Type']
-        form = cgi.FieldStorage(fp = self.rfile, headers = self.headers, environ = env)
-        k, v = form['key'].value, form['value'].value
+        
+        content_length = int(self.headers.get('Content-length', '-1'))
+        v = self.rfile.read(content_length)
+        k = self.path.split("/")[-1] # last part
+
+        if k == "":
+            # invalid request
+            self.send_error(400)
+            return
 
         self.server.shared.ds.put(k, v)
 
@@ -203,6 +206,7 @@ class HttpHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.end_headers()
             return
+
         
         if self.server.shared.masters == []:
             # We have no masters, check if any are available.
@@ -211,18 +215,18 @@ class HttpHandler(BaseHTTPRequestHandler):
             if servers != []:
                 self.server.shared.masters = servers[:2]
                 self.server.shared.nodes   = servers
-                print "servers: ", servers
-                print "found masters: ", self.server.shared.masters
+                #print "servers: ", servers
+                #print "found masters: ", self.server.shared.masters
 
         client = httplib2.Http()
         for _, server in self.server.shared.masters:
             if server != self.server.shared.ip: # no point in sending ourself our data.
-                print "sending post to ", server
-                # todo: don't use urlencoding
-                resp, content = client.request("http://%s:%s/local/" % (server, http_port), "POST", 
-                                               urllib.urlencode({'key': k, 'value': v}))
-                print resp, content    
-        
+                resp, content = client.request("http://%s:%s/local/%s" % (server, http_port, k), "POST", v)
+                if resp.status != 200:
+                    self.send_error(resp.status)
+                    return
+            else:
+                print "skipping"
         self.send_response(200)
         self.end_headers()
         self.wfile.write('post ok, data sent to %s\n' % repr(self.server.shared.masters))
@@ -269,6 +273,7 @@ class Server(object):
     def start(self):
         """start the servers main loops"""
         self.rh.start()
+        debug_print("server %s starting" % self.http.shared.ip)
         self.http.serve_forever()
     
 
