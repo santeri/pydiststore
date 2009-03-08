@@ -1,0 +1,13 @@
+Source: pydiststore
+Section: python
+Priority: extra
+Maintainer: Santeri Hernejärvi <santeri@santeri.se>
+Build-Depends: cdbs, debhelper (>= 7), python
+Standards-Version: 3.7.3
+Homepage: http://santeri.github.com/pydiststore
+
+Package: pydiststore
+Architecture: all
+Depends: ${python:Depends}, python-httplib2
+Description: Simple distributed key/value store.
+ See README for details.

@@ -1,0 +1,9 @@
+#!/usr/bin/make -f
+
+DEB_PYTHON_SYSTEM = pysupport
+include /usr/share/cdbs/1/rules/debhelper.mk
+include /usr/share/cdbs/1/class/python-distutils.mk
+
+install/pydiststore::
+	mkdir debian/pydiststore/etc || true
+	install -m 644 diststored.cfg debian/pydiststore/etc
