@@ -27,6 +27,14 @@ They are sent to the current master servers, or if there aren't any a master
 selection is done based on which nodes have the most keys.
 
 [todo: fix master server failures]
+If a master server goes down it will be noticed on the next put, when
+a node tries to send the key to the master.
+
+If that happens the node will redo the master server selection process and
+notify the cluster that a master has gone missing.
+
+The new master server will then start fetching all keys from the remaining master.
+
 
 [todo: deleting keys]
 

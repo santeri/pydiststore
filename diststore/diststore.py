@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # encoding: utf-8
-
+from __future__ import with_statement
 from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 from SocketServer import ThreadingMixIn
 from portmanager import Portmanager
@@ -35,9 +35,9 @@ class RequestHandler(threading.Thread):
         s.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_TTL, 10)
         s.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_LOOP, 0)
         s.bind(('', port))
-        mreq = struct.pack("4sl", socket.inet_aton(multicast_addr), socket.INADDR_ANY)
+        mreq = struct.pack("4sl", socket.inet_aton(multicast_addr()), socket.INADDR_ANY)
         s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-        debug_print("Request handler at %s:%d in multicast group %s" % (addr, port, multicast_addr))
+        debug_print("Request handler at %s:%d in multicast group %s" % (addr, port, multicast_addr()))
         self.sock = s
         threading.Thread.__init__(self)
     
@@ -63,17 +63,21 @@ class RequestHandler(threading.Thread):
     
 
 class HttpHandler(BaseHTTPRequestHandler):
+    """Handle http GET and POST requests.
+        
+        This class in instanced by the ThreadedHttpServer, once per connection
+    """
     def request_key(self, key):
         """helper for sending key request"""
         # create socket and find a free port
         rsock, port = self.server.shared.pm.next_socket()
-        rsock.settimeout(multicast_timeout)
+        rsock.settimeout(multicast_timeout())
         # send a request with sender & port information
         sock = udpsocket()
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
         data = "whohas %s %s %d" % (key, self.server.shared.ip, port)
         debug_print("%s: sending multicast: %s" % (self.server.shared.ip, data))
-        sock.sendto(data, multicast_dst)
+        sock.sendto(data, multicast_dst())
         sock.close()
         # wait for a response or time out
         try:
@@ -94,13 +98,13 @@ class HttpHandler(BaseHTTPRequestHandler):
         """
         # create socket and find a free port
         rsock, port = self.server.shared.pm.next_socket()
-        rsock.settimeout(multicast_timeout)
+        rsock.settimeout(multicast_timeout())
         # send a request with sender & port information
         sock = udpsocket()
         sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
         data = "keycount %s %d" % (self.server.shared.ip, port)
         debug_print("%s: sending multicast: %s" % (self.server.shared.ip, data))
-        sock.sendto(data, multicast_dst)
+        sock.sendto(data, multicast_dst())
         sock.close()
         # wait for a response or time out
         servers = []
@@ -117,10 +121,10 @@ class HttpHandler(BaseHTTPRequestHandler):
         except socket.error, e:
             pass # timeout
         rsock.close()
-        # Return the server list sorted by the key count or ip
+        # Return the server list sorted by the key count and ip
         servers.sort(cmp=lambda a,b: cmp(b[0], a[0]) or cmp(a[1], b[1]))
         return servers
-        
+    
     def do_GET(self):
         """Handle get requests.
             
@@ -162,16 +166,16 @@ class HttpHandler(BaseHTTPRequestHandler):
                 if remote_key != key:
                     error_print("remote key does not match our request: %s != %s" % (remote_key, key))
                     self.send_error(500)
-
+                
                 debug_print("%s: received multicast: %s" % (self.server.shared.ip, resp))
                 client = httplib2.Http()
                 resp, content = client.request("http://%s:%s/get/%s" % 
-                        (remote_ip, http_port, key), "GET")
+                        (remote_ip, http_port(), key), "GET")
                 if resp.status != 200:
                     error_print("%s: http get failed for key %s at host %s" % (self.server.shared.ip, key, remote_ip))
                     error_print("%s: %s" % (self.server.shared.ip, repr(resp)))
                     self.send_error(resp.status)
-
+                
                 # store the key locally
                 self.server.shared.ds.put(key, content)
                 # write the http response
@@ -181,7 +185,7 @@ class HttpHandler(BaseHTTPRequestHandler):
             else:
                 debug_print("%s: received invalid response: %s" % (self.server.shared.ip, resp))
     
-    def do_POST(self):        
+    def do_POST(self):
         """Store a key/value pair in the datastore, and send
             it to the master servers, if any.
         """
@@ -193,20 +197,20 @@ class HttpHandler(BaseHTTPRequestHandler):
         content_length = int(self.headers.get('Content-length', '-1'))
         v = self.rfile.read(content_length)
         k = self.path.split("/")[-1] # last part
-
+        
         if k == "":
             # invalid request
             self.send_error(400)
             return
-
+        
+        # Store the key/value pair locally
         self.server.shared.ds.put(k, v)
-
+        
         if 'local' in self.path:  
             # Skip cluster update
             self.send_response(200)
             self.end_headers()
             return
-
         
         if self.server.shared.masters == []:
             # We have no masters, check if any are available.
@@ -217,22 +221,21 @@ class HttpHandler(BaseHTTPRequestHandler):
                 self.server.shared.nodes   = servers
                 #print "servers: ", servers
                 #print "found masters: ", self.server.shared.masters
-
+        
         client = httplib2.Http()
         for _, server in self.server.shared.masters:
             if server != self.server.shared.ip: # no point in sending ourself our data.
-                resp, content = client.request("http://%s:%s/local/%s" % (server, http_port, k), "POST", v)
+                resp, content = client.request("http://%s:%s/local/%s" % (server, http_port(), k), "POST", v)
                 if resp.status != 200:
                     self.send_error(resp.status)
                     return
-            else:
-                print "skipping"
+        
         self.send_response(200)
         self.end_headers()
         self.wfile.write('post ok, data sent to %s\n' % repr(self.server.shared.masters))
         self.wfile.write('key: %s\nvalue:%s\n' % (k, v))
-        
-        
+    
+
 class ThreadedHttpServer(ThreadingMixIn, HTTPServer):
     """Handles request in a separate thread."""
     def __init__(self, addr, handler, shared):
@@ -241,7 +244,8 @@ class ThreadedHttpServer(ThreadingMixIn, HTTPServer):
     
     def server_bind(self):
         """Setting allow_reuse_address doesn't seem to work, 
-           so we do it here."""
+           so we do it here.
+        """
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         HTTPServer.allow_reuse_address = 1
@@ -253,8 +257,24 @@ class Server(object):
         """Holds shared data between the multicast request handler and
            the http server.
         """
-        nodes = dict() # Contains host -> number of keys pairs
-        masters = []
+        _lock = threading.Lock()
+        _nodes = dict() # Contains host -> number of keys pairs
+        _masters = []   # Top two nodes.
+        
+        def _getmasters(self):
+            with self._lock: return self._masters
+        
+        def _setmasters(self, list):
+            with self._lock: self._masters = list
+        
+        def _getnodes(self):
+            with self._lock: return self._nodes
+        
+        def _setnodes(self, list):   
+            with self._lock: self._nodes = list
+        
+        masters = property(_getmasters, _setmasters, doc="Set or get the masters list")
+        nodes   = property(_getnodes,   _setnodes,   doc="Set or get the nodes list")
         
         def __init__(self, ds, pm, ip):
             self.ds = ds
@@ -265,9 +285,9 @@ class Server(object):
     def __init__(self, ip='', ds = Datastore(), pm = Portmanager(50000,1000)):
         """create the http server and start the multicast thread"""
         shared = Server.Shared(ds, pm, ip)
-        self.http = ThreadedHttpServer((ip, http_port), HttpHandler, shared)
+        self.http = ThreadedHttpServer((ip, http_port()), HttpHandler, shared)
         self.http.daemon_threads = True
-        self.rh = RequestHandler(ip, multicast_port, shared)
+        self.rh = RequestHandler(ip, multicast_port(), shared)
         self.rh.setDaemon(True)
     
     def start(self):
