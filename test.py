@@ -237,7 +237,10 @@ class TestCluster(unittest.TestCase):
         time.sleep(1)
         
         self._checked_post(3, 'testkeyfor3', 'testvalue for 3')
-
+        
+        # wait for the server to sync
+        time.sleep(5)
+        
         for i in range(1, 10):
             value = self._checked_get(2, 'testkey%d' % i, cmd='getlocal')
             self.assertEquals(value, 'testvalue %d, for server 1' % i)

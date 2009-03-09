@@ -14,6 +14,53 @@ import httplib2
 import socket
 import sys
 
+class SyncThread(threading.Thread):
+    """Handles sync if we become a new master"""
+    def __init__(self, shared):
+        super(SyncThread, self).__init__()
+        self.shared = shared
+    def run(self):
+        debug_print("syncthread getting masters")
+        oldmasters = [e[1] for e in self.shared.masters]
+        self.shared.update_masters()
+        debug_print("syncthread got masters")
+        newmasters = [e[1] for e in self.shared.masters]
+        print self.shared.ip, oldmasters, newmasters
+        print "foo"
+        if self.shared.ip in oldmasters:
+            print "foo1.5"
+            # we are a master, don't do anything
+            debug_print("%s: we are a master, don't sync" % self.shared.ip)
+            return
+
+        if self.shared.ip in newmasters:
+            print "foo2"
+            # get a list of keys from the other master
+            # and fetch the ones we're missing.
+            server = list(newmasters)
+            server.remove(self.shared.ip)
+            server = server[0]
+            debug_print("%s: new master, starting sync from %s" % (self.shared.ip, server))
+            
+            client = httplib2.Http()
+            resp, content = client.request("http://%s:%d/list" % (server, http_port()))
+            print "foo3"
+            if resp.status == 200:
+                c = httplib2.Http()
+                allkeys = content.split()
+                debug_print("%s: server %s has %d keys" % (self.shared.ip, server, len(allkeys)))
+                needkeys = [k for k in allkeys if self.shared.ds.has(k) == False]
+                debug_print("%s: need to get %d keys" % (self.shared.ip, len(needkeys)))
+                for key in needkeys:
+                    r, v = c.request("http://%s:%d/getlocal/%s" % (server, http_port(), key))
+                    if r.status == 200:
+                        self.shared.ds.put(key, v)
+                    else:
+                        error_print("%s: server %s is missing key %s" % (self.shared.ip, server, key))
+                debug_print("%s: new master, sync complete" % self.shared.ip)
+            else:
+                error_print("%s: failed to get a list of keys from %s" % (self.shared.ip, server))
+
 class RequestHandler(threading.Thread):
     """Listen for multicast request from the other nodes.
         
@@ -22,7 +69,8 @@ class RequestHandler(threading.Thread):
             A request from a node for a key.
         - keycount [ip] [port]
             A request for the number of keys we have.
-        - newmasters
+        - masterlost [who] [master]
+            `who` failed to update it's master at `master`.
     """
     def __init__(self, addr, port, shared):
         """Set up a multicast listen
@@ -60,6 +108,17 @@ class RequestHandler(threading.Thread):
                     # here we could send a negative response to keep
                     # latencies down. Good Idea?
                     pass
+            elif msg.startswith('masterlost'):
+                _, ip, master_ip = msg.split()
+                if self.shared.syncthread != None and self.shared.syncthread.is_alive():
+                    # hmm, this is not good, a sync is in progress and we have no way
+                    # to stop it.
+                    debug_print("syncthread already alive")
+                else:
+                    debug_print("starting sync thread")
+                    st = SyncThread(self.shared)
+                    st.setDaemon(True)
+                    st.start()
     
 
 class HttpHandler(BaseHTTPRequestHandler):
@@ -67,68 +126,6 @@ class HttpHandler(BaseHTTPRequestHandler):
         
         This class in instanced by the ThreadedHttpServer, once per connection
     """
-    def request_key(self, key):
-        """helper for sending key request to the cluster"""
-        # create socket and find a free port
-        rsock, port = self.server.shared.pm.next_socket()
-        rsock.settimeout(multicast_timeout())
-        # send a request with sender & port information
-        sock = udpsocket()
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 10)
-        sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_LOOP, 1)
-        
-        data = "whohas %s %s %d" % (key, self.server.shared.ip, port)
-        debug_print("%s: sending multicast: %s" % (self.server.shared.ip, data))
-        sock.sendto(data, multicast_dst())
-        sock.close()
-        # wait for a response or time out
-        try:
-            return rsock.recv(1024)
-        except socket.error, e:
-            # timed out
-            return None
-        finally:
-            rsock.close()
-    
-    def request_keycount(self):
-        """helper for sending keycount requests
-            
-        Sends a request for all nodes using multicast, 
-        wait for responses for `multicast_timeout` and
-        return the list of server, key count pairs, sorted
-        by key count.
-        """
-        # create socket and find a free port
-        rsock, port = self.server.shared.pm.next_socket()
-        rsock.settimeout(multicast_timeout())
-        # send a request with sender & port information
-        sock = udpsocket()
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
-        sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_LOOP, 1)
-        
-        data = "keycount %s %d" % (self.server.shared.ip, port)
-        debug_print("%s: sending multicast: %s" % (self.server.shared.ip, data))
-        sock.sendto(data, multicast_dst())
-        sock.close()
-        # wait for a response or time out
-        servers = []
-        try:
-            while True:
-                # If no more responses are received in 1s, stop.
-                resp = rsock.recv(1024)
-                try:
-                    cmd, ip, count = resp.split()
-                    servers.append((int(count), ip))
-                except:
-                    print_error("%s: received invalid response: %s " % (self.server.shared.ip, sys.exc_info()))
-                print resp
-        except socket.error, e:
-            pass # timeout
-        rsock.close()
-        # Return the server list sorted by the key count and ip
-        servers.sort(cmp=lambda a,b: cmp(b[0], a[0]) or cmp(a[1], b[1]))
-        return servers
-    
     def do_GET(self):
         """Handle get requests.
             
@@ -138,6 +135,12 @@ class HttpHandler(BaseHTTPRequestHandler):
         result to the client
         """
         debug_print("%s: http request for %s" % (self.server.shared.ip, self.path))
+        if 'list' in self.path:
+            self.send_response(200)
+            self.end_headers()
+            for key in self.server.shared.ds.keys():
+                self.wfile.write("%s\n" % key)
+            return
         
         if not 'get' in self.path:
             # invalid request
@@ -159,7 +162,7 @@ class HttpHandler(BaseHTTPRequestHandler):
                 self.send_error(404)
                 return
             
-            resp = self.request_key(key) 
+            resp = self.server.shared.request_key(key) 
             
             if resp == None:
                 self.send_error(404)
@@ -215,14 +218,7 @@ class HttpHandler(BaseHTTPRequestHandler):
             return
         
         if self.server.shared.masters == []:
-            # We have no masters, check if any are available.
-            # Send a request, and wait a second for replies.
-            servers = self.request_keycount()
-            if servers != []:
-                self.server.shared.masters = servers[:2]
-                self.server.shared.nodes   = servers
-                print "servers: ", servers
-                print "found masters: ", self.server.shared.masters
+            self.server.shared.update_masters()
         
         for _, server in self.server.shared.masters:
             if server != self.server.shared.ip: # no point in sending ourself our data.
@@ -232,12 +228,13 @@ class HttpHandler(BaseHTTPRequestHandler):
                     print "sending localpost: ", url
                     resp, content = client.request(url, "POST", v)
                     if resp.status != 200:
-                        self.send_error(resp.status)
-                        return
+                        print_error("%s: failed to update master at %s" % (self.server.shared.ip, server))
+                        self.server.shared.notify_masterlost(self.server.shared.ip, server)
                 except socket.error,e:
-                    # notify cluster that a master is down
-                    print "TODO: select new masters: ", e
-                    self.send_error(500)
+                    # Notify cluster that a master is down
+                    # They key has been stored locally, and sent to the current
+                    # master, if any.
+                    self.server.shared.notify_masterlost(self.server.shared.ip, server)
         
         self.send_response(200)
         self.end_headers()
@@ -270,6 +267,8 @@ class Server(object):
         _nodes = dict() # Contains host -> number of keys pairs
         _masters = []   # Top two nodes.
         
+        syncthread = None
+        
         def _getmasters(self):
             with self._lock: return self._masters
         
@@ -289,6 +288,89 @@ class Server(object):
             self.ds = ds
             self.pm = pm
             self.ip = ip
+        
+        def update_masters(self):
+            """update the node and master lists"""
+            # We have no masters, check if any are available.
+            # Send a request, and wait a second for replies.
+            servers = self.request_keycount()
+            if servers != []:
+                self.masters = servers[:2]
+                self.nodes   = servers
+                print "servers: ", servers
+                print "found masters: ", self.masters
+        
+        def notify_masterlost(self, reporting_ip, master_ip):
+            """Notify the cluster that a master node went missing"""
+            sock = udpsocket()
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 10)
+            sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_LOOP, 1)
+            data = "masterlost %s %s" % (reporting_ip, master_ip)
+            debug_print("%s: sending multicast: %s" % (self.ip, data))
+            sock.sendto(data, multicast_dst())
+            sock.close()
+        
+        def request_key(self, key):
+            """helper for sending key request to the cluster"""
+            # create socket and find a free port
+            rsock, port = self.pm.next_socket()
+            rsock.settimeout(multicast_timeout())
+            # send a request with sender & port information
+            sock = udpsocket()
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 10)
+            sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_LOOP, 1)
+            
+            data = "whohas %s %s %d" % (key, self.ip, port)
+            debug_print("%s: sending multicast: %s" % (self.ip, data))
+            sock.sendto(data, multicast_dst())
+            sock.close()
+            # wait for a response or time out
+            try:
+                return rsock.recv(1024)
+            except socket.error, e:
+                # timed out
+                return None
+            finally:
+                rsock.close()
+        
+        def request_keycount(self):
+            """helper for sending keycount requests
+            
+            Sends a request for all nodes using multicast, 
+            wait for responses for `multicast_timeout` and
+            return the list of server, key count pairs, sorted
+            by key count.
+            """
+            # create socket and find a free port
+            rsock, port = self.pm.next_socket()
+            rsock.settimeout(multicast_timeout())
+            # send a request with sender & port information
+            sock = udpsocket()
+            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+            sock.setsockopt(socket.SOL_IP, socket.IP_MULTICAST_LOOP, 1)
+            
+            data = "keycount %s %d" % (self.ip, port)
+            debug_print("%s: sending multicast: %s" % (self.ip, data))
+            sock.sendto(data, multicast_dst())
+            sock.close()
+            # wait for a response or time out
+            servers = []
+            try:
+                while True:
+                    # If no more responses are received in 1s, stop.
+                    resp = rsock.recv(1024)
+                    try:
+                        cmd, ip, count = resp.split()
+                        servers.append((int(count), ip))
+                    except:
+                        print_error("%s: received invalid response: %s " % (self.ip, sys.exc_info()))
+                    print resp
+            except socket.error, e:
+                pass # timeout
+            rsock.close()
+            # Return the server list sorted by the key count and ip
+            servers.sort(cmp=lambda a,b: cmp(b[0], a[0]) or cmp(a[1], b[1]))
+            return servers
         
     
     def __init__(self, ip='', ds = Datastore(), pm = Portmanager(50000,1000)):
