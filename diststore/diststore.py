@@ -1,6 +1,14 @@
 #!/usr/bin/env python
 # encoding: utf-8
-from __future__ import with_statement
+has_with = False
+
+# Bah.
+#try:
+#    from __future__ import with_statement
+#    has_with = True
+#except:
+#    pass
+
 from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 from SocketServer import ThreadingMixIn
 from portmanager import Portmanager
@@ -267,16 +275,32 @@ class Server(object):
         syncthread = None
         
         def _getmasters(self):
-            with self._lock: return self._masters
+            try:
+                self._lock.acquire()
+                return self._masters
+            finally:
+                self._lock.release()
         
-        def _setmasters(self, list):
-            with self._lock: self._masters = list
+        def _setmasters(self, new_masters):
+            try:
+                self._lock.acquire()
+                self._masters = new_masters
+            finally:
+                self._lock.release()
         
         def _getnodes(self):
-            with self._lock: return self._nodes
+            try:
+                self._lock.acquire()
+                return self._nodes
+            finally:
+                self._lock.release()
         
-        def _setnodes(self, list):   
-            with self._lock: self._nodes = list
+        def _setnodes(self, new_nodes):
+            try:
+                self._lock.acquire()
+                self._masters = new_nodes
+            finally:
+                self._lock.release()
         
         masters = property(_getmasters, _setmasters, doc="Set or get the masters list")
         nodes   = property(_getnodes,   _setnodes,   doc="Set or get the nodes list")

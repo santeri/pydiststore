@@ -259,10 +259,10 @@ if __name__ == '__main__':
         print "Failed to bind to ports, check that the ip range 10.1.2.1-10 is set up"
         print "  on osx: "
         for i in range(1,11):
-            print "sudo ifconfig lo0 alias 10.2.1.%d netmask 255.255.255.0" % i
+            print "sudo ifconfig lo0 alias 10.1.2.%d netmask 255.255.255.0" % i
         print "  on linux: "
         for i in range(1,11):
-            print "ifconfig lo:%d 10.2.1.%d netmask 255.255.255.0" % (i-1, i)
+            print "ifconfig lo:%d 10.1.2.%d netmask 255.255.255.0" % (i-1, i)
         import sys
         sys.exit(1)
     unittest.main()

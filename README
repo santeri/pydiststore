@@ -2,17 +2,33 @@ h1. Diststore
 
 *NOTE: this is not really suitable for real use yet.*
 
-The system is a asymmetric key/value store where all the data is persisted on two master servers.
-Commonly accessed keys are distributed on more servers than the infrequently accessed keys.
+The system is a asymmetric key/value store where all the data is persisted on
+two master servers. Commonly accessed keys are distributed on more servers
+than the infrequently accessed keys.
 
 The master nodes are selected based in which ones have the most keys.
 [Easier to manage with set masters?]
 
 h2. Installation
 
+h3. With source
+
 Install httplib2
 Install with setup.py
 Run the diststored script on all nodes using, for example, supervisord.
+
+h3. With debuild
+
+1. # apt-get install pbuilder
+2. # /usr/lib/pbuilder/pbuilder-satisfydepends 
+3. $ debuild -us -uc
+4. install generated debian package.
+
+h2. Test cases
+
+Before running the test cases make sure that the ip range used by them is set
+up properly. The test cases use addresses in the range 10.1.2.1 to 10.1.2.11,
+which can be added as aliases on lo0.
 
 h2. Node services
 
@@ -21,7 +37,8 @@ a thread that listens for multicast request.
 
 h3. Post request
 
-All key/value pairs are set using http POST, using a form with @key@ and @value@ fields.
+All key/value pairs are set using http POST, using a form with @key@ and
+@value@ fields.
 
 They are sent to the current master servers, or if there aren't any a master
 selection is done based on which nodes have the most keys.
@@ -31,7 +48,8 @@ a node tries to send the key to the master.
 
 If that happens all nodes will redo the master selection process.
 
-The new master server will then start fetching all keys from the remaining master.
+The new master server will then start fetching all keys from the remaining
+master.
 
 [todo: deleting keys]
 
@@ -40,11 +58,12 @@ h3. Get request
 If a node receives a get request for a key which it doesn't have locally, a
 multicast request is sent to all nodes.
 
-All other node which have the key will reply to the node using a udp packet and
-the original node then gets the value using http. The value is sent to the client
-and the key/value pair is cached locally.
+All other node which have the key will reply to the node using a udp packet
+and the original node then gets the value using http. The value is sent to the
+client and the key/value pair is cached locally.
 
-[todo: The key/value pairs expire after a set timeout on all nodes except for the master nodes]
+[todo: The key/value pairs expire after a set timeout on all nodes except for
+the master nodes]
 
 h3. Get local
 
