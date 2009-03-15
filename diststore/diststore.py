@@ -261,7 +261,6 @@ class ThreadedHttpServer(ThreadingMixIn, HTTPServer):
            so we do it here.
         """
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         HTTPServer.allow_reuse_address = 1
         HTTPServer.server_bind(self)
     
