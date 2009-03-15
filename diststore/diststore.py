@@ -347,10 +347,11 @@ class Server(object):
             sock.close()
             # wait for a response or time out
             try:
-                return rsock.recv(1024)
-            except socket.error, e:
-                # timed out
-                return None
+                try:
+                    return rsock.recv(1024)
+                except socket.error, e:
+                    # timed out
+                    return None
             finally:
                 rsock.close()
         
