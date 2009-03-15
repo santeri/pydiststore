@@ -1,3 +1,4 @@
+#!/usr/bin/python
 # encoding: utf-8
 
 import unittest
@@ -108,7 +109,7 @@ class TestCluster(unittest.TestCase):
     def setUp(self):
         """Set up several nodes on different ips,
            This needs previous setup of ip addresses on localhost from 
-           10.1.2.1 to 10.1.2.11.
+           10.1.2.1 to 10.1.2.10.
         """
         time.sleep(0.1)
         for i in range(1, self.nservers+1):
@@ -167,15 +168,15 @@ class TestCluster(unittest.TestCase):
     def testSync(self):
         """Check that syncing data works"""
         # put 10 keys to .1,  this will make .1 and .10 master servers.
-        for i in range(1, 10):
+        for i in range(1, 11):
             self._checked_post(1, 'testkey%d' % i, 'testvalue %d, for server 1' % i)
         
         # put 10 keys to .5 they will be sync'd to .1 and .10.
-        for i in range(1, 10):
+        for i in range(1, 11):
             self._checked_post(5, 'testkey-2-%d' % i, 'testvalue %d, for server 5' % i)
         
         # get all keys from .1.
-        for i in range(1, 10):
+        for i in range(1, 11):
             value = self._checked_get(1, 'testkey%d' % i, cmd='getlocal')
             self.assertEquals(value, 'testvalue %d, for server 1' % i)
             
@@ -185,22 +186,22 @@ class TestCluster(unittest.TestCase):
     def testClusterGet(self):
         """Check that syncing data works, part 2"""
         # put 10 keys to .1,  this will make .1 and .10 master servers.
-        for i in range(1, 10):
+        for i in range(1, 11):
             self._checked_post(1, 'testkey%d' % i, 'testvalue %d, for server 1' % i)
         
         # put 10 keys to .5 they will be sync'd to .1 and .10.
-        for i in range(1, 10):
+        for i in range(1, 11):
             self._checked_post(5, 'testkey-2-%d' % i, 'testvalue %d, for server 5' % i)
         
         # get all keys from .3 which will query cluster.
-        for i in range(1, 10):
+        for i in range(1, 11):
             value = self._checked_get(3, 'testkey%d' % i)
             self.assertEquals(value, 'testvalue %d, for server 1' % i)
             value = self._checked_get(3, 'testkey-2-%d' % i)
             self.assertEquals(value, 'testvalue %d, for server 5' % i)
         
         # now .3 should have all the keys
-        for i in range(1, 10):
+        for i in range(1, 11):
             value = self._checked_get(3, 'testkey%d' % i, cmd='getlocal')
             self.assertEquals(value, 'testvalue %d, for server 1' % i)
             
@@ -217,35 +218,28 @@ class TestCluster(unittest.TestCase):
             
             Send a key to .3, and check that .2 becomes master.
         """
-        time.sleep(1)
-        for i in range(1, 10):
+        for i in range(1, 11):
             self._checked_post(1, 'testkey%d' % i, 'testvalue %d, for server 1' % i)
-
-        for i in range(1, 10):
+        
+        for i in range(1, 11):
             self._checked_post(i, 'testkey-2-%d' % i, 'testvalue-2 %d, for server 1' % i)
         
-        time.sleep(1)
-        
         self._checked_post(2, 'testkeyfor2', 'testvalue for 2')
-        time.sleep(1)
         
-        pid = self.pids[1]
-        print "killing ", pid
-        print os.kill(pid, 15)
-        print os.wait4(pid, 0)
+        # Kill node 1
+        os.kill(self.pids[1], 15)
+        os.wait4(self.pids[1], 0)
         del(self.pids[1])
-        time.sleep(1)
         
         self._checked_post(3, 'testkeyfor3', 'testvalue for 3')
         
         # wait for the server to sync
         time.sleep(5)
         
-        for i in range(1, 10):
+        # check that node 2 (the new master) has all the keys sent to node 1 previously.
+        for i in range(1, 11):
             value = self._checked_get(2, 'testkey%d' % i, cmd='getlocal')
             self.assertEquals(value, 'testvalue %d, for server 1' % i)
-        
-        
     
     def tearDown(self):
         """Kill the nodes"""
@@ -255,8 +249,21 @@ class TestCluster(unittest.TestCase):
                 os.wait4(pid, 0)
             except OSError,e:
                 pass # the child might already be dead..
-    
 
 if __name__ == '__main__':
+    # check that we have the local addresses we need
+    try:
+        for i in range(1,11):
+            socket.socket().bind(("10.1.2.%d" % i, 4983))
+    except socket.error, e:
+        print "Failed to bind to ports, check that the ip range 10.1.2.1-10 is set up"
+        print "  on osx: "
+        for i in range(1,11):
+            print "sudo ifconfig lo0 alias 10.2.1.%d netmask 255.255.255.0" % i
+        print "  on linux: "
+        for i in range(1,11):
+            print "ifconfig lo:%d 10.2.1.%d netmask 255.255.255.0" % (i-1, i)
+        import sys
+        sys.exit(1)
     unittest.main()
     
