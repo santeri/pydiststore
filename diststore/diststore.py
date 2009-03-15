@@ -236,6 +236,7 @@ class HttpHandler(BaseHTTPRequestHandler):
                         print_error("%s: failed to update master at %s" % (self.server.shared.ip, server))
                         self.server.shared.notify_masterlost(self.server.shared.ip, server)
                 except socket.error,e:
+                    debug_print("%s: master lost: %s" % (self.server.shared.ip, e))
                     # Notify cluster that a master is down
                     # They key has been stored locally, and sent to the current
                     # master, if any.
@@ -299,7 +300,7 @@ class Server(object):
         def _setnodes(self, new_nodes):
             try:
                 self._lock.acquire()
-                self._masters = new_nodes
+                self._nodes = new_nodes
             finally:
                 self._lock.release()
         
@@ -318,9 +319,7 @@ class Server(object):
             servers = self.request_keycount()
             if servers != []:
                 self.masters = servers[:2]
-                self.nodes   = servers
-                print "servers: ", servers
-                print "found masters: ", self.masters
+                self.nodes = servers
         
         def notify_masterlost(self, reporting_ip, master_ip):
             """Notify the cluster that a master node went missing"""
