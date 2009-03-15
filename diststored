@@ -5,28 +5,10 @@ import sys
 import os
 import diststore
 
-def get_ip_address(ifname):
-	"""Get address for `ifname`.  Linux only."""
-	from socket import *
-	import fcntl
-	import struct
-	s = socket(AF_INET, SOCK_STREAM)
-	return inet_ntoa(fcntl.ioctl(s.fileno(), 0x8915, struct.pack('256s', ifname[:15]))[20:24])
-
 def main():
     print "diststored starting"
-    addr = ''
-    possible_interfaces = ["eth0", "en1", "en0"]
-    for interface in possible_interfaces:
-        try:
-    	    addr = get_ip_address(interface)
-	    print "Using interface %s, ip %s" % (interface, addr)
-        except IOError:
-	    pass
-	if addr != '':
-	    break
     try:
-        server = diststore.Server(ip=addr)
+        server = diststore.Server()
         server.start()
     except:
         print "diststored terminated"
