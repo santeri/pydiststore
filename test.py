@@ -47,7 +47,7 @@ class TestHttp(unittest.TestCase):
     def tearDown(self):
         try:
             os.kill(self.pid, 15)
-            os.wait4(self.pid, 0)
+            os.waitpid(self.pid, 0)
         except OSError,e:
             pass # the child might already be dead..
     
@@ -228,7 +228,7 @@ class TestCluster(unittest.TestCase):
         
         # Kill node 1
         os.kill(self.pids[1], 15)
-        os.wait4(self.pids[1], 0)
+        os.waitpid(self.pids[1], 0)
         del(self.pids[1])
         
         self._checked_post(3, 'testkeyfor3', 'testvalue for 3')
@@ -246,7 +246,7 @@ class TestCluster(unittest.TestCase):
         for pid in self.pids.values():
             try:
                 os.kill(pid, 15)
-                os.wait4(pid, 0)
+                os.waitpid(pid, 0)
             except OSError,e:
                 pass # the child might already be dead..
 
