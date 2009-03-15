@@ -1,6 +1,5 @@
 # encoding: utf-8
 
-from __future__ import with_statement
 import threading
 
 class Datastore(object):
@@ -16,28 +15,50 @@ class Datastore(object):
         
     def put(self, k, v):
         """store a key/value pair."""
-        with self.lock: self.ds[k] = v
+        try:
+            self.lock.acquire()
+            self.ds[k] = v
+        finally:
+            self.lock.release()
     
     def has(self, k):
         """check for key `k`."""
-        with self.lock: return k in self.ds
-    
+        try:
+            self.lock.acquire()
+            return k in self.ds
+        finally:
+            self.lock.release()
+            
     def get(self, k):
         """get a value from the store with key `k`."""
-        with self.lock: return self.ds[k]
+        try:
+            self.lock.acquire()
+            return self.ds[k]
+        finally:
+            self.lock.release()
     
     def keys(self):
         """get all keys in the store."""
-        with self.lock:
-            # Not really needed with python 2.5 as dict.keys() is atomic, 
-            # but will be with python 3 where it won't be.
+        try:
+            self.lock.acquire()
+            # list(.. ) is not really needed with python 2.5 as dict.keys() is
+            # atomic, but will be with python 3 where it won't be.
             return list(self.ds.keys())
+        finally:
+            self.lock.release()
     
     def count(self):
         """return the number of keys stored."""
-        with self.lock: return len(self.ds.keys())
+        try:
+            self.lock.acquire()
+            return len(self.ds.keys())
+        finally:
+            self.lock.release()
     
     def clear(self):
         """Remove all keys and values."""
-        with self.lock:
+        try:
+            self.lock.acquire()
             self.ds.clear()
+        finally:
+            self.lock.release()
