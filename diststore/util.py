@@ -4,7 +4,7 @@ from socket import socket, AF_INET, SOCK_DGRAM, SOL_SOCKET
 from socket import SO_REUSEADDR, IPPROTO_UDP
 
 has_reuseport = False
-try
+try:
     from socket import SO_REUSEPORT
     has_reuseport = True
 except:
