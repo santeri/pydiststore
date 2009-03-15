@@ -2,27 +2,34 @@ h1. Diststore
 
 *NOTE: this is not really suitable for real use yet.*
 
-The system is a asymmetric key/value store where all the data is persisted on
-two master servers. Commonly accessed keys are distributed on more servers
+The system is a asymmetric key/value store where all the data is stored on
+two master servers. Commonly accessed keys are distributed to more servers
 than the infrequently accessed keys.
 
-The master nodes are selected based in which ones have the most keys.
-[Easier to manage with set masters?]
+The master nodes are selected based in which ones have the most keys. If a 
+master node fails a new is selected automatically and it will sync itself with
+the old remaining master.
+
+[todo: persistent storage ]
+[todo: key expiration]
 
 h2. Installation
 
-h3. With source
+h3. Using source
 
-Install httplib2
-Install with setup.py
-Run the diststored script on all nodes using, for example, supervisord.
+1. Install python & python-httplib2
+2. Install with setup.py
+3. Run the diststored script on all nodes using, for example, supervisord.
 
-h3. With debuild
+h3. Using debuild
 
 1. # apt-get install pbuilder
 2. # /usr/lib/pbuilder/pbuilder-satisfydepends 
 3. $ debuild -us -uc
 4. install generated debian package.
+4. Run diststored on all nodes
+
+[todo: daemonize & install init scripts]
 
 h2. Test cases
 
@@ -53,6 +60,10 @@ master.
 
 [todo: deleting keys]
 
+h3. Post local
+
+The same as post, but won't try to send the key/value to masters.
+
 h3. Get request
 
 If a node receives a get request for a key which it doesn't have locally, a
@@ -68,3 +79,8 @@ the master nodes]
 h3. Get local
 
 Get a key locally, without requesting missing keys from the cluster.
+
+h3. List keys
+
+List all keys the node has, used by the synchronization process which is done
+when a new nodes becomes master.
