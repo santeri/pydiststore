@@ -25,16 +25,12 @@ class SyncThread(threading.Thread):
         self.shared.update_masters()
         debug_print("syncthread got masters")
         newmasters = [e[1] for e in self.shared.masters]
-        print self.shared.ip, oldmasters, newmasters
-        print "foo"
         if self.shared.ip in oldmasters:
-            print "foo1.5"
             # we are a master, don't do anything
             debug_print("%s: we are a master, don't sync" % self.shared.ip)
             return
 
         if self.shared.ip in newmasters:
-            print "foo2"
             # get a list of keys from the other master
             # and fetch the ones we're missing.
             server = list(newmasters)
@@ -44,7 +40,6 @@ class SyncThread(threading.Thread):
             
             client = httplib2.Http()
             resp, content = client.request("http://%s:%d/list" % (server, http_port()))
-            print "foo3"
             if resp.status == 200:
                 c = httplib2.Http()
                 allkeys = content.split()
@@ -56,9 +51,11 @@ class SyncThread(threading.Thread):
                     if r.status == 200:
                         self.shared.ds.put(key, v)
                     else:
+                        # Eek!
                         error_print("%s: server %s is missing key %s" % (self.shared.ip, server, key))
                 debug_print("%s: new master, sync complete" % self.shared.ip)
             else:
+                # Ook!
                 error_print("%s: failed to get a list of keys from %s" % (self.shared.ip, server))
 
 class RequestHandler(threading.Thread):
