@@ -97,34 +97,36 @@ class RequestHandler(threading.Thread):
     def run(self):
         """run the handler"""
         while True:
-            msg = self.sock.recv(1024)
-            debug_print("%s: received multicast msg: %s" % (self.shared.ip, repr(msg)))
-            if msg.startswith('keycount'):
-                _, ip, port = msg.split()
-                udpsocket().sendto("keycount %s %d" % (self.shared.ip, self.shared.ds.count()), (ip, int(port)))
-            elif msg.startswith('whohas'):
-                _, key, ip, port = msg.split()
-                if self.shared.ds.has(key):
-                    # send yes with our ip
-                    msg = "gotkey %s %s" % (key, self.shared.ip)
-                    debug_print("%s: we have the key, responding with: %s" % (self.shared.ip, msg))
-                    udpsocket().sendto(msg, (ip,int(port)))
-                else:
-                    # here we could send a negative response to keep
-                    # latencies down. Good Idea?
-                    pass
-            elif msg.startswith('masterlost'):
-                _, ip, master_ip = msg.split()
-                if self.shared.syncthread != None and self.shared.syncthread.is_alive():
-                    # hmm, this is not good, a sync is in progress and we have no way
-                    # to stop it.
-                    debug_print("syncthread already alive")
-                else:
-                    debug_print("starting sync thread")
-                    st = SyncThread(self.shared)
-                    st.setDaemon(True)
-                    st.start()
-    
+            try:
+                msg = self.sock.recv(1024)
+                debug_print("%s: received multicast msg: %s" % (self.shared.ip, repr(msg)))
+                if msg.startswith('keycount'):
+                    _, ip, port = msg.split()
+                    udpsocket().sendto("keycount %s %d" % (self.shared.ip, self.shared.ds.count()), (ip, int(port)))
+                elif msg.startswith('whohas'):
+                    _, key, ip, port = msg.split()
+                    if self.shared.ds.has(key):
+                        # send yes with our ip
+                        msg = "gotkey %s %s" % (key, self.shared.ip)
+                        debug_print("%s: we have the key, responding with: %s" % (self.shared.ip, msg))
+                        udpsocket().sendto(msg, (ip,int(port)))
+                    else:
+                        # here we could send a negative response to keep
+                        # latencies down. Good Idea?
+                        pass
+                elif msg.startswith('masterlost'):
+                    _, ip, master_ip = msg.split()
+                    if self.shared.syncthread != None and self.shared.syncthread.is_alive():
+                        # hmm, this is not good, a sync is in progress and we have no way
+                        # to stop it.
+                        debug_print("syncthread already alive")
+                    else:
+                        debug_print("starting sync thread")
+                        st = SyncThread(self.shared)
+                        st.setDaemon(True)
+                        st.start()
+            except ValueError:
+                error_print("%s: invalid message: %s" % (self.shared.ip, msg))
 
 class HttpHandler(BaseHTTPRequestHandler):
     """Handle http GET and POST requests.
@@ -259,8 +261,7 @@ class ThreadedHttpServer(ThreadingMixIn, HTTPServer):
            so we do it here.
         """
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        # No reuseport in 2.4	
-        #self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         HTTPServer.allow_reuse_address = 1
         HTTPServer.server_bind(self)
     
