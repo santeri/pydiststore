@@ -6,7 +6,7 @@ The system is a asymmetric key/value store where all the data is stored on
 two master servers. Commonly accessed keys are distributed to more servers
 than the infrequently accessed keys.
 
-The master nodes are selected based in which ones have the most keys. If a 
+The master nodes are selected based in which ones have the most keys. If a
 master node fails a new is selected automatically and it will sync itself with
 the old remaining master.
 
@@ -24,7 +24,7 @@ h3. Using source
 h3. Using debuild
 
 1. # apt-get install pbuilder
-2. # /usr/lib/pbuilder/pbuilder-satisfydepends 
+2. # /usr/lib/pbuilder/pbuilder-satisfydepends
 3. $ debuild -us -uc
 4. install generated debian package.
 4. Run diststored on all nodes
